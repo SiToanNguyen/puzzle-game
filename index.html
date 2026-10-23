@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Cut &amp; Fit</title>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);
+--bg:#e6ece4;--panel:#d5dfd3;--ink:#1d3336;--accent:#c9531f;--line:#1d333655}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#1c3235;--panel:#274448;--ink:#eef3ee;--accent:#f2b544;--line:#eef3ee44}}
+:root[data-theme="dark"]{--bg:#1c3235;--panel:#274448;--ink:#eef3ee;--accent:#f2b544;--line:#eef3ee44}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*,*:before,*:after{box-sizing:inherit}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"Bricolage Grotesque",system-ui,sans-serif;min-height:100%}
+header{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center;padding:14px 16px}
+h1{font-size:1.5rem;font-weight:800;margin:0 auto 0 0;letter-spacing:-.02em}
+button,select,label.btn{font:inherit;font-weight:600;color:var(--ink);background:var(--panel);border:2px solid var(--line);border-radius:8px;padding:7px 12px;cursor:pointer}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+:root:not([data-theme="light"]) button.primary{color:#1c3235}
+button:focus-visible,select:focus-visible,label.btn:focus-within{outline:3px solid var(--accent);outline-offset:2px}
+label.hint{display:flex;gap:6px;align-items:center;font-weight:600}
+#status{font-weight:600;min-width:9ch;text-align:right;font-variant-numeric:tabular-nums}
+#wrap{overflow-x:auto;padding:4px 16px 24px}
+#stage{position:relative;margin:0 auto;touch-action:none;user-select:none}
+#board{position:absolute;left:0;top:0;border:2px dashed var(--line);border-radius:4px;overflow:hidden}
+#ghost{display:block;transition:opacity .2s}
+.piece{position:absolute;cursor:grab;touch-action:none;filter:drop-shadow(0 2px 3px rgba(0,0,0,.35))}
+.piece.lift{cursor:grabbing;filter:drop-shadow(0 9px 10px rgba(0,0,0,.4));transform:scale(1.03)}
+.piece.done{cursor:default;filter:none;pointer-events:none}
+#win{display:none;position:fixed;inset:0;background:#0007;align-items:center;justify-content:center;z-index:9999}
+#win div{background:var(--bg);padding:28px 32px;border-radius:12px;text-align:center}
+#win h2{margin:0 0 6px;font-size:1.8rem}
+input[type=file]{position:absolute;opacity:0;width:1px;height:1px}
+</style>
+</head>
+<body>
+<header>
+  <h1>Cut &amp; Fit</h1>
+  <label class="btn"><span data-i18n="chooseImage">Choose image</span><input type="file" id="file" accept="image/*"></label>
+  <select id="size" aria-label="Puzzle size" data-i18n-aria="puzzleSize">
+    <option value="6,4" data-i18n="easy">Easy 6×4</option>
+    <option value="8,6" selected data-i18n="medium">Medium 8×6</option>
+    <option value="12,8" data-i18n="hard">Hard 12×8</option>
+  </select>
+  <label class="hint"><input type="checkbox" id="hint" checked> <span data-i18n="showHint">Show hint</span></label>
+  <button id="rand" data-i18n="randomImage">Random image</button>
+  <button class="primary" id="again" data-i18n="newCut">New cut</button>
+  <select id="language" aria-label="Language" data-i18n-aria="language">
+    <option value="en">English</option>
+    <option value="vi" selected>Tiếng Việt</option>
+    <option value="de">Deutsch</option>
+  </select>
+  <span id="status">0 / 0</span>
+</header>
+<div id="wrap"><div id="stage"><div id="board"><canvas id="ghost"></canvas></div></div></div>
+<div id="win"><div><h2 data-i18n="solved">Solved!</h2><p id="time"></p><button class="primary" id="again2" data-i18n="continue">Continue</button></div></div>
+
+<script>
+const $=s=>document.querySelector(s), stage=$('#stage');
+const translations={
+  en:{
+    chooseImage:'Choose image',language:'Language',puzzleSize:'Puzzle size',easy:'Easy 6×4',medium:'Medium 8×6',hard:'Hard 12×8',
+    showHint:'Show hint',randomImage:'Random image',newCut:'New cut',continue:'Continue',solved:'Solved!',
+    loadingPhoto:'Loading photo…',photoFailed:'Photo failed to load',finishedIn:'Finished in {time}.'
+  },
+  vi:{
+    chooseImage:'Chọn ảnh',language:'Ngôn ngữ',puzzleSize:'Kích thước trò chơi',easy:'Dễ 6×4',medium:'Trung bình 8×6',hard:'Khó 12×8',
+    showHint:'Hiện gợi ý',randomImage:'Ảnh ngẫu nhiên',newCut:'Cắt mới',continue:'Tiếp tục',solved:'Đã hoàn thành!',
+    loadingPhoto:'Đang tải ảnh…',photoFailed:'Không thể tải ảnh',finishedIn:'Hoàn thành trong {time}.'
+  },
+  de:{
+    chooseImage:'Bild auswählen',language:'Sprache',puzzleSize:'Schwierigkeitsgrad',easy:'Einfach 6×4',medium:'Mittel 8×6',hard:'Schwer 12×8',
+    showHint:'Hinweis anzeigen',randomImage:'Zufallsbild',newCut:'Neu mischen',continue:'Weiter',solved:'Geschafft!',
+    loadingPhoto:'Bild wird geladen…',photoFailed:'Bild konnte nicht geladen werden',finishedIn:'Abgeschlossen in {time}.'
+  }
+};
+let language='vi', photoState='loading', solvedDuration=null;
+let src=null, total=0, placed=0, z=10, t0=0, timer=null, drag=null, cs=40;
+function translate(key){return translations[language][key]}
+function applyLanguage(){
+  document.documentElement.lang=language;
+  document.querySelectorAll('[data-i18n]').forEach(element=>{
+    element.textContent=translate(element.dataset.i18n);
+  });
+  document.querySelectorAll('[data-i18n-aria]').forEach(element=>{
+    element.setAttribute('aria-label',translate(element.dataset.i18nAria));
+  });
+  status();
+  if(solvedDuration!==null)$('#time').textContent=translate('finishedIn').replace('{time}',fmt(solvedDuration));
+}
+const randomPhotos=[
+  '1500530855697-b586d89ba3ee','1470770841072-f978cf4d019e',
+  '1501785888041-af3ef285b470','1470252649378-9c29740c9fa8',
+  '1472214103451-9374bd1c798e','1518837695005-2083093ee35b',
+  '1507525428034-b723cf961d3e','1497250681960-ef046c08a56e',
+  '1519681393784-d120267933ba','1500534623283-312aade485b7',
+  '1441974231531-c6227db76b6e','1472396961693-142e6e269027'
+];
+let lastRandomPhoto=-1, imageLoadId=0;
+function randomImage(){
+  let index=Math.random()*randomPhotos.length|0;
+  if(index===lastRandomPhoto)index=(index+1)%randomPhotos.length;
+  return new Promise((resolve,reject)=>{
+    const image=new Image();
+    image.crossOrigin='anonymous';
+    image.onload=()=>{lastRandomPhoto=index;resolve(image)};
+    image.onerror=()=>reject(new Error('Unable to load the selected photo'));
+    image.src=`https://images.unsplash.com/photo-${randomPhotos[index]}?auto=format&fit=crop&w=900&h=700&q=85`;
+  });
+}
+function loadRandomImage(){
+  const request=++imageLoadId, button=$('#rand');
+  photoState='loading';button.disabled=true;status();
+  randomImage().then(image=>{
+    if(request!==imageLoadId)return;
+    src=image;build();
+  }).catch(error=>{
+    if(request!==imageLoadId)return;
+    console.error(error);photoState='error';status();
+  }).finally(()=>{
+    if(request===imageLoadId)button.disabled=false;
+  });
+}
+function demoOld(){
+  const c=document.createElement('canvas');c.width=900;c.height=700;const x=c.getContext('2d');
+  const g=x.createLinearGradient(0,0,0,700);g.addColorStop(0,'#f6c453');g.addColorStop(.55,'#ef7b5a');g.addColorStop(1,'#5b2a6b');
+  x.fillStyle=g;x.fillRect(0,0,900,700);
+  x.fillStyle='#fff3c9';x.beginPath();x.arc(620,300,110,0,7);x.fill();
+  ['#8a3f7a','#5f2f78','#3c2a70','#231f52'].forEach((col,i)=>{
+    x.fillStyle=col;x.beginPath();x.moveTo(0,700);
+    for(let k=0;k<=9;k++)x.lineTo(k*100,430+i*70-Math.sin(k*1.3+i*2)*(60-i*8));
+    x.lineTo(900,700);x.fill();
+  });
+  return c;
+}
+function fit(s,W,H){
+  const c=document.createElement('canvas');c.width=W;c.height=H;
+  const sw=s.naturalWidth||s.width, sh=s.naturalHeight||s.height, k=Math.max(W/sw,H/sh), w=sw*k, h=sh*k;
+  c.getContext('2d').drawImage(s,(W-w)/2,(H-h)/2,w,h);return c;
+}
+const N=[[1,0],[-1,0],[0,1],[0,-1]];
+function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.random()*(i+1)|0;[a[i],a[j]]=[a[j],a[i]]}return a}
+
+// Random region growing: pieces of 4 cells; fragments under 3 cells merge into a neighbour (so 5-cell pieces occur)
+function split(R,C){
+  const g=Array.from({length:R},()=>Array(C).fill(-1)), cells=[], pieces=[];
+  for(let r=0;r<R;r++)for(let c=0;c<C;c++)cells.push([r,c]);
+  shuffle(cells);
+  for(const [r,c] of cells){
+    if(g[r][c]!==-1)continue;
+    const id=pieces.length, p=[[r,c]];g[r][c]=id;
+    while(p.length<4){
+      const fr=[];
+      for(const [y,x] of p)for(const [dy,dx] of N){
+        const ny=y+dy,nx=x+dx;
+        if(ny>=0&&ny<R&&nx>=0&&nx<C&&g[ny][nx]===-1)fr.push([ny,nx]);
+      }
+      if(!fr.length)break;
+      const [ny,nx]=fr[Math.random()*fr.length|0];g[ny][nx]=id;p.push([ny,nx]);
+    }
+    pieces.push(p);
+  }
+  pieces.forEach((p,id)=>{
+    if(p.length>=3)return;
+    let best=-1;
+    for(const [y,x] of p)for(const [dy,dx] of N){
+      const ny=y+dy,nx=x+dx; if(ny<0||ny>=R||nx<0||nx>=C)continue;
+      const n=g[ny][nx];
+      if(n!==id&&(best<0||pieces[n].length<pieces[best].length))best=n;
+    }
+    if(best>=0){for(const cell of p){g[cell[0]][cell[1]]=best;pieces[best].push(cell)}pieces[id]=[];}
+  });
+  return pieces.filter(p=>p.length);
+}
+
+function makePiece(cells,img){
+  const rs=cells.map(c=>c[0]),ccs=cells.map(c=>c[1]);
+  const r0=Math.min(...rs),c0=Math.min(...ccs),h=Math.max(...rs)-r0+1,w=Math.max(...ccs)-c0+1,m=6;
+  const cv=document.createElement('canvas');cv.width=w*cs+2*m;cv.height=h*cs+2*m;
+  const x=cv.getContext('2d'), set=new Set(cells.map(c=>c+''));
+  x.save();x.beginPath();
+  for(const [r,c] of cells)x.rect(m+(c-c0)*cs,m+(r-r0)*cs,cs,cs);
+  x.clip();x.drawImage(img,m-c0*cs,m-r0*cs);x.restore();
+  x.strokeStyle='rgba(255,255,255,.9)';x.lineWidth=3;x.lineCap='round';x.beginPath();
+  for(const [r,c] of cells){
+    const X=m+(c-c0)*cs,Y=m+(r-r0)*cs;
+    if(!set.has([r-1,c]+''))x.moveTo(X,Y),x.lineTo(X+cs,Y);
+    if(!set.has([r+1,c]+''))x.moveTo(X,Y+cs),x.lineTo(X+cs,Y+cs);
+    if(!set.has([r,c-1]+''))x.moveTo(X,Y),x.lineTo(X,Y+cs);
+    if(!set.has([r,c+1]+''))x.moveTo(X+cs,Y),x.lineTo(X+cs,Y+cs);
+  }
+  x.stroke();
+  cv.className='piece';
+  cv.dataset.tx=c0*cs-m;cv.dataset.ty=r0*cs-m;
+  return cv;
+}
+
+function build(){
+  if(!src)return;
+  photoState='progress';solvedDuration=null;
+  clearInterval(timer);t0=0;placed=0;$('#win').style.display='none';
+  stage.querySelectorAll('.piece').forEach(p=>p.remove());
+  const [C,R]=$('#size').value.split(',').map(Number);
+  const availW=$('#wrap').clientWidth-32;
+  cs=Math.max(16,Math.min(64,Math.floor(Math.min(availW/C,(innerHeight-170)*.6/R))));
+  const W=C*cs,H=R*cs,trayH=Math.ceil(H*.7)+cs*2;
+  stage.style.width=W+'px';stage.style.height=H+trayH+'px';
+  const board=$('#board');board.style.width=W+'px';board.style.height=H+'px';
+  const img=fit(src,W,H), gh=$('#ghost');gh.width=W;gh.height=H;gh.getContext('2d').drawImage(img,0,0);
+  gh.style.opacity=$('#hint').checked?.22:0;
+  const pieces=split(R,C);total=pieces.length;
+  for(const cells of pieces){
+    const cv=makePiece(cells,img);
+    cv.style.left=Math.random()*(W-cv.width)+'px';
+    cv.style.top=H+12+Math.random()*(trayH-cv.height-12)+'px';
+    cv.style.zIndex=++z;
+    stage.appendChild(cv);
+  }
+  status();
+}
+function status(){
+  const text=photoState==='loading'?translate('loadingPhoto'):photoState==='error'?translate('photoFailed'):placed+' / '+total;
+  $('#status').textContent=text;
+}
+function fmt(s){return Math.floor(s/60)+':'+String(s%60).padStart(2,'0')}
+
+stage.addEventListener('pointerdown',e=>{
+  const p=e.target.closest('.piece'); if(!p||p.classList.contains('done'))return;
+  if(!t0){t0=Date.now();timer=setInterval(()=>{},1000)}
+  drag={p,dx:e.clientX-p.offsetLeft,dy:e.clientY-p.offsetTop};
+  p.setPointerCapture(e.pointerId);p.style.zIndex=++z;p.classList.add('lift');
+});
+stage.addEventListener('pointermove',e=>{
+  if(!drag)return;
+  drag.p.style.left=e.clientX-drag.dx+'px';drag.p.style.top=e.clientY-drag.dy+'px';
+});
+stage.addEventListener('pointerup',()=>{
+  if(!drag)return;
+  const p=drag.p;drag=null;p.classList.remove('lift');
+  const tx=+p.dataset.tx,ty=+p.dataset.ty;
+  if(Math.abs(p.offsetLeft-tx)<cs*.5&&Math.abs(p.offsetTop-ty)<cs*.5){
+    p.style.left=tx+'px';p.style.top=ty+'px';p.style.zIndex=1;p.classList.add('done');
+    status(); if(++placed===total){
+      clearInterval(timer);status();
+      solvedDuration=Math.round((Date.now()-t0)/1000);
+      $('#time').textContent=translate('finishedIn').replace('{time}',fmt(solvedDuration));
+      $('#win').style.display='flex';
+    } else status();
+  }
+});
+
+$('#file').onchange=e=>{
+  const f=e.target.files[0];if(!f)return;
+  imageLoadId++;$('#rand').disabled=false;
+  const im=new Image();im.onload=()=>{src=im;build()};im.src=URL.createObjectURL(f);
+};
+$('#size').onchange=build;
+$('#rand').onclick=loadRandomImage;
+$('#again').onclick=build;
+$('#again2').onclick=loadRandomImage;
+$('#hint').onchange=()=>{$('#ghost').style.opacity=$('#hint').checked?.22:0};
+$('#language').onchange=e=>{language=e.target.value;applyLanguage()};
+applyLanguage();
+loadRandomImage();
+</script>
+</body>
+</html>
